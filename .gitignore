@@ -1,0 +1,69 @@
+# Python 缓存
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# 虚拟环境
+.venv/
+venv/
+env/
+ENV/
+
+# 编辑器与系统文件
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# 本地环境变量
+.env
+.env.*
+!.env.example
+
+# 临时检查输出
+_check_output.txt
+
+# 数据产物：默认不提交大型语料和 token 化结果
+data/raw/*
+data/interim/*
+data/processed/*
+!data/raw/.gitkeep
+!data/interim/.gitkeep
+!data/processed/.gitkeep
+!data/processed/tokenizer.json
+
+# 训练输出：默认不提交 checkpoint、日志和采样结果
+outputs/checkpoints/*
+outputs/samples/*
+outputs/logs/*
+!outputs/checkpoints/.gitkeep
+!outputs/samples/.gitkeep
+!outputs/logs/.gitkeep
+
+# 模型权重与训练中间文件
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+*.bin
+*.npy
+*.npz
+*.arrow
+*.idx
+*.memmap
+*.tfevents.*
+
+# Docker 与构建缓存
+.docker/
+build/
+dist/
+*.egg-info/
+
+# Notebook 缓存
+.ipynb_checkpoints/
