@@ -1,0 +1,104 @@
+# 任务类型：当前配置用于数据扫描、确定性清洗、LLM 规范化兜底和语料构建
+task: data_pipeline
+
+# 运行环境：脚本按 Docker/Linux 路径语义处理，宿主机路径只通过 Docker volume 映射进入容器
+runtime:
+  work_dir: /workspace/train        # 容器内 train 工程目录，Dockerfile 默认使用该路径
+  data_root: /mnt/corpus            # 容器内语料挂载根目录，docker run 时将宿主机数据目录挂载到这里
+
+# 中间数据目录：存放统一 JSONL、纯文本语料和 LLM 规范化中间结果，默认不纳入 Git
+interim_dir: data/interim
+
+# 日志输出目录：存放扫描报告和语料统计结果，默认不纳入 Git
+log_dir: outputs/logs
+
+# 输出文件名：统一集中管理数据流水线会生成的文件名称
+output_files:
+  poems_jsonl: poems.jsonl                         # 统一 JSONL 文件名，每行一首诗词样本
+  corpus_text: poetry_corpus.txt                   # 纯文本语料文件名，用于后续 tokenizer 训练
+  styled_poems_jsonl: poems_with_styles.jsonl      # 可选 LLM 风格分类输出文件名
+  scan_report: corpus_scan.json                    # 原始数据扫描报告文件名
+  corpus_stats: corpus_stats.json                  # 清洗后语料统计报告文件名
+  rejected_jsonl: rejected_records.jsonl           # 规则无法兼容且不进入 LLM 的记录
+  llm_candidate_jsonl: llm_candidates.jsonl        # 可选送入 LLM 规范化的候选记录
+  llm_normalized_jsonl: llm_normalized_records.jsonl # LLM 规范化后通过 schema 校验的记录
+
+# 数据源序列：每个条目描述一个可扫描目录，path 默认相对 runtime.data_root
+corpus_sources:
+  - id: tang_poetry                                # 数据源唯一 ID，用于样本 ID、统计和追踪
+    enabled: true                                  # 是否启用该数据源
+    path: chinese-poetry/全唐诗                    # 语料目录路径，相对 runtime.data_root
+    patterns:                                      # 文件匹配规则，支持一个或多个 glob 表达式
+      - poet.tang.*.json
+    tags:                                          # 该目录从属标签，会写入统一 JSONL 的 tags 字段
+      dynasty: tang
+      genre: poem
+      corpus_type: 唐诗
+      source_name: 全唐诗
+    format:
+      adapter: chinese_poetry_json_array           # 确定性解析器名称，当前支持 chinese_poetry_json_array
+      llm_on_incompatible: false                   # 格式不兼容时是否允许进入 LLM 规范化候选集
+
+  - id: song_ci                                    # 数据源唯一 ID，用于样本 ID、统计和追踪
+    enabled: true                                  # 是否启用该数据源
+    path: chinese-poetry/宋词                      # 语料目录路径，相对 runtime.data_root
+    patterns:                                      # 文件匹配规则，支持一个或多个 glob 表达式
+      - ci.song.*.json
+    tags:                                          # 该目录从属标签，会写入统一 JSONL 的 tags 字段
+      dynasty: song
+      genre: ci
+      corpus_type: 宋词
+      source_name: 宋词
+    format:
+      adapter: chinese_poetry_json_array           # 确定性解析器名称，当前支持 chinese_poetry_json_array
+      llm_on_incompatible: false                   # 格式不兼容时是否允许进入 LLM 规范化候选集
+
+  - id: yuanqu                                     # 数据源唯一 ID，用于样本 ID、统计和追踪
+    enabled: true                                  # 是否启用该数据源
+    path: chinese-poetry/元曲                      # 语料目录路径，相对 runtime.data_root
+    patterns:                                      # 文件匹配规则，支持一个或多个 glob 表达式
+      - yuanqu.json
+    tags:                                          # 该目录从属标签，会写入统一 JSONL 的 tags 字段
+      dynasty: yuan
+      genre: qu
+      corpus_type: 元曲
+      source_name: 元曲
+    format:
+      adapter: chinese_poetry_json_array           # 确定性解析器名称，当前支持 chinese_poetry_json_array
+      llm_on_incompatible: false                   # 格式不兼容时是否允许进入 LLM 规范化候选集
+
+# 格式不兼容记录：先保留证据和候选集，不默认消耗外部 LLM API
+incompatible_records:
+  max_preview_chars: 1200                          # 单条原始记录写入候选集时保留的最大预览字符数
+  keep_raw_record: true                            # JSON 可序列化时是否在候选集中保留原始记录
+
+# LLM 规范化清洗：默认关闭，只有格式不兼容且明确启用时才调用外部 API
+llm_normalization:
+  enabled: false                                   # 是否启用 LLM 规范化；默认关闭避免额外成本
+  api_base_url: https://api.openai.com/v1          # OpenAI 兼容 API 根地址，可替换为其他供应商地址
+  api_key_env: POET_MINI_LLM_API_KEY               # API Key 环境变量名，避免把密钥写入配置文件
+  model: gpt-4o-mini                               # 默认规范化模型名称，可按供应商实际模型覆盖
+  request_timeout_seconds: 60                      # 单次请求超时时间，单位秒
+  max_retries: 2                                   # 单条样本请求失败后的最大重试次数
+  max_records: 100                                 # 单次流水线最多规范化的候选记录数量
+  target_schema: poem_record_v1                    # LLM 输出需要满足的目标 schema 名称
+
+# LLM 风格分类：独立于格式规范化，后续只用于补充风格标签
+llm_classification:
+  enabled: false                                   # 是否在入口流程中启用 LLM 风格分类；默认关闭避免额外成本
+  api_base_url: https://api.openai.com/v1          # OpenAI 兼容 API 根地址，可替换为其他供应商地址
+  api_key_env: POET_MINI_LLM_API_KEY               # API Key 环境变量名，避免把密钥写入配置文件
+  model: gpt-4o-mini                               # 默认分类模型名称，可按供应商实际模型覆盖
+  request_timeout_seconds: 60                      # 单次请求超时时间，单位秒
+  max_retries: 2                                   # 单条样本请求失败后的最大重试次数
+  style_labels: 抒情,写景,咏物,怀古,边塞,田园,送别,羁旅,闺怨,讽喻,哲理,宴饮,悼亡,爱国,未确定 # 允许输出的风格标签集合
+
+# 清洗规则：预训练前只启用低风险、可回滚的基础清洗
+cleaning:
+  min_text_length: 4                               # 正文最短字符数，小于该值的样本进入异常记录
+  normalize_whitespace: true                       # 是否合并连续空白字符
+  keep_punctuation: true                           # 是否保留中文标点；第一版固定保留
+
+# 扫描设置：控制 scan_corpus.py 输出的样例数量，避免报告过长
+scan:
+  sample_size: 3                                   # 每个文件最多保留的样例记录数量
