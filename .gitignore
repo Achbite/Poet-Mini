@@ -31,12 +31,18 @@ _check_output.txt
 
 # 数据产物：默认不提交大型语料和 token 化结果
 data/raw/*
+data/sample/**
 data/interim/*
 data/processed/*
 !data/raw/.gitkeep
+!data/sample/
+!data/sample/.gitkeep
+!data/sample/*/
+!data/sample/*/.gitkeep
 !data/interim/.gitkeep
 !data/processed/.gitkeep
 !data/processed/tokenizer.json
+
 
 # 训练输出：默认不提交 checkpoint、日志和采样结果
 outputs/checkpoints/*

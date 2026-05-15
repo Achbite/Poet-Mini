@@ -64,26 +64,39 @@ def script_path(script_name: str) -> Path:
 
 # ---- 子进程执行 ----
 def run_command(command: list[str], step_name: str) -> dict[str, object]:
-    """执行单个流水线步骤，并返回结构化结果。"""
-    result = subprocess.run(
+    """执行单个流水线步骤，实时转发子进程输出。"""
+    print(f"[pipeline] 开始步骤：{step_name}", flush=True)
+    process = subprocess.Popen(
         command,
         cwd=project_root(),
         text=True,
         encoding="utf-8",
         stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        check=False,
+        stderr=subprocess.STDOUT,
+        bufsize=1,
     )
+
+    output_lines: list[str] = []
+    if process.stdout is not None:
+        for line in process.stdout:
+            text = line.rstrip()
+            if text:
+                output_lines.append(text)
+                print(f"[{step_name}] {text}", flush=True)
+
+    returncode = process.wait()
+    print(f"[pipeline] 结束步骤：{step_name}，returncode={returncode}", flush=True)
     return {
         "step": step_name,
-        "returncode": result.returncode,
-        "stdout": result.stdout.strip(),
-        "stderr": result.stderr.strip(),
+        "returncode": returncode,
+        "stdout": "\n".join(output_lines).strip(),
+        "stderr": "",
     }
 
 
 # ---- 步骤命令构建 ----
 def build_step_command(step_name: str, config_path: str) -> list[str]:
+
     """根据步骤名构建对应脚本命令。"""
     script_map = {
         "scan": "scan_corpus.py",
@@ -95,16 +108,18 @@ def build_step_command(step_name: str, config_path: str) -> list[str]:
     if step_name not in script_map:
         raise ValueError(f"未知流水线步骤：{step_name}")
 
-    return [sys.executable, str(script_path(script_map[step_name])), "--config", config_path]
+    return [sys.executable, "-u", str(script_path(script_map[step_name])), "--config", config_path]
 
 
 # ---- LLM 分类命令构建 ----
 def build_llm_style_command(config_path: str) -> list[str]:
+
     """构建可选 LLM 风格分类命令。"""
-    return [sys.executable, str(script_path("classify_styles_with_llm.py")), "--config", config_path]
+    return [sys.executable, "-u", str(script_path("classify_styles_with_llm.py")), "--config", config_path]
 
 
 # ---- LLM 规范化结果合并 ----
+
 def iter_jsonl(path: Path) -> list[str]:
     """读取 JSONL 原始行，忽略空行。"""
     if not path.exists():
@@ -176,11 +191,13 @@ def main() -> int:
     if args.with_llm_normalization:
         requested_steps = ["scan", "build-jsonl", *OPTIONAL_LLM_STEPS, "build-text", "inspect"]
 
+    print(f"[pipeline] 数据流水线启动，步骤：{','.join(requested_steps)}", flush=True)
     results: list[dict[str, object]] = []
     exit_code = 0
     llm_normalization_skipped = False
 
     for step_name in requested_steps:
+
         if step_name == "merge-normalized" and llm_normalization_skipped:
             result = {
                 "step": "merge-normalized",
@@ -213,8 +230,10 @@ def main() -> int:
         if llm_result["returncode"] != 0:
             exit_code = int(llm_result["returncode"])
 
+    print(f"[pipeline] 数据流水线完成，exit_code={exit_code}", flush=True)
     print(json.dumps({"results": results}, ensure_ascii=False, indent=2))
     return exit_code
+
 
 
 if __name__ == "__main__":

@@ -95,9 +95,12 @@ def export_corpus_text(input_path: Path, output_path: Path) -> dict[str, Any]:
         "invalid_examples": [],
     }
 
+    print(f"[build-text] 输入：{input_path.as_posix()}", flush=True)
+    print(f"[build-text] 输出：{output_path.as_posix()}", flush=True)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with output_path.open("w", encoding="utf-8") as output_file:
         for line_number, record, error in iter_jsonl(input_path):
+
             if error:
                 stats["invalid_line_count"] += 1
                 if len(stats["invalid_examples"]) < 10:
@@ -113,8 +116,12 @@ def export_corpus_text(input_path: Path, output_path: Path) -> dict[str, Any]:
             output_file.write(text.strip())
             output_file.write("\n\n")
             stats["written_count"] += 1
+            if stats["written_count"] % 10000 == 0:
+                print(f"[build-text] 已写入文本样本数：{stats['written_count']}", flush=True)
 
+    print(f"[build-text] 导出完成，写入文本样本数：{stats['written_count']}", flush=True)
     return stats
+
 
 
 # ---- CLI 入口 ----

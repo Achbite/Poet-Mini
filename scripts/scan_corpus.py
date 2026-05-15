@@ -264,8 +264,14 @@ def build_report(config: dict[str, Any], data_root: Path, sample_size: int) -> d
         llm_on_incompatible = bool(format_config.get("llm_on_incompatible", False))
 
         files = find_source_files(source_dir, patterns)
-        file_reports = [scan_file(path, source_dir, sample_size, adapter) for path in files]
+        print(f"[scan] 数据源 {current_source_id}：目录={source_dir.as_posix()}，文件数={len(files)}", flush=True)
+        file_reports: list[dict[str, Any]] = []
+        for file_index, path in enumerate(files, start=1):
+            if file_index == 1 or file_index % 25 == 0 or file_index == len(files):
+                print(f"[scan] 数据源 {current_source_id}：扫描文件 {file_index}/{len(files)} {path.name}", flush=True)
+            file_reports.append(scan_file(path, source_dir, sample_size, adapter))
         compatible_file_count = sum(1 for item in file_reports if item["compatible"])
+
         incompatible_file_count = sum(1 for item in file_reports if not item["compatible"])
         record_count = sum(int(item["record_count"]) for item in file_reports)
 

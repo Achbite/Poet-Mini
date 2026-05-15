@@ -1,0 +1,41 @@
+# Git 与编辑器目录
+.git
+.vscode
+.idea
+
+# Python 缓存
+__pycache__
+*.pyc
+.pytest_cache
+.mypy_cache
+.ruff_cache
+
+# 本地环境和临时输出
+.env
+.env.*
+_check_output.txt
+
+# 大型数据与训练产物
+data/raw/**
+data/sample/**
+data/interim/**
+data/processed/**
+outputs/checkpoints/**
+outputs/samples/**
+outputs/logs/**
+
+# 保留目录结构由 Git 管理，镜像构建不需要复制占位文件
+**/.gitkeep
+
+# 模型权重与中间文件
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+*.bin
+*.npy
+*.npz
+*.arrow
+*.idx
+*.memmap
+*.tfevents.*

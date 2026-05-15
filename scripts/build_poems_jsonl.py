@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 from collections import Counter
 from pathlib import Path
+
 from typing import Any, Iterator
 
 try:
@@ -204,8 +206,30 @@ def clean_optional_field(record: dict[str, Any], field_name: str, normalize_whit
     return clean_text(value, normalize_whitespace)
 
 
+def clean_style_tags(record: dict[str, Any], normalize_whitespace: bool) -> list[str]:
+    """读取并清洗原始样本中的分类标签。"""
+    value = record.get("tags", [])
+    if isinstance(value, str):
+        tag = clean_text(value, normalize_whitespace)
+        return [tag] if tag else []
+    if not isinstance(value, list):
+        return []
+
+    tags: list[str] = []
+    seen: set[str] = set()
+    for item in value:
+        if not isinstance(item, str):
+            continue
+        tag = clean_text(item, normalize_whitespace)
+        if tag and tag not in seen:
+            tags.append(tag)
+            seen.add(tag)
+    return tags
+
+
 def clean_paragraphs(record: dict[str, Any], normalize_whitespace: bool) -> tuple[list[str], int]:
     """清洗 paragraphs 字段，并返回非字符串段落数量。"""
+
     raw_paragraphs = record.get("paragraphs")
     if not isinstance(raw_paragraphs, list):
         return [], 0
@@ -253,11 +277,14 @@ def make_sample_id(current_source_id: str, raw_file: Path, raw_index: int) -> st
     """生成稳定且跨来源不冲突的样本 ID。"""
     safe_source = re.sub(r"[^0-9a-zA-Z_-]+", "-", current_source_id).strip("-").lower()
     safe_stem = re.sub(r"[^0-9a-zA-Z]+", "-", raw_file.stem).strip("-").lower()
+    if not safe_stem:
+        safe_stem = hashlib.sha1(raw_file.stem.encode("utf-8")).hexdigest()[:12]
     return f"{safe_source}-{safe_stem}-{raw_index:06d}"
 
 
 def record_preview(record: Any, max_chars: int) -> str:
     """生成不兼容记录预览，避免候选集过大。"""
+
     try:
         text = json.dumps(record, ensure_ascii=False)
     except TypeError:
@@ -326,6 +353,7 @@ def build_sample(
         return None, "text_too_short", invalid_paragraph_count
 
     tags = source_tags(source)
+    style_tags = clean_style_tags(record, normalize_whitespace)
     dynasty = clean_optional_field(record, "dynasty", normalize_whitespace) or tags.get("dynasty", "")
     source_name = tags.get("source_name", current_source_id)
     sample: dict[str, Any] = {
@@ -336,9 +364,10 @@ def build_sample(
             **tags,
             "dynasty": dynasty,
         },
-        "style_tags": [],
-        "style_label_source": "",
+        "style_tags": style_tags,
+        "style_label_source": "source_tags" if style_tags else "",
         "author": clean_optional_field(record, "author", normalize_whitespace),
+
         "title": clean_optional_field(record, "title", normalize_whitespace),
         "rhythmic": clean_optional_field(record, "rhythmic", normalize_whitespace),
         "paragraphs": paragraphs,
@@ -418,43 +447,52 @@ def build_jsonl(
             patterns = split_patterns(source.get("patterns"))
             files = find_source_files(source_dir, patterns)
             llm_on_incompatible = source_llm_on_incompatible(source)
+            print(f"[build-jsonl] 数据源 {current_source_id}：目录={source_dir.as_posix()}，文件数={len(files)}", flush=True)
 
             if adapter not in SUPPORTED_ADAPTERS:
                 issue = make_issue_record(source, current_source_id, source_dir, None, None, f"unsupported_adapter:{adapter}", {}, max_preview_chars, keep_raw_record)
                 target_file = llm_candidate_file if llm_on_incompatible else rejected_file
+
                 write_jsonl_record(target_file, issue)
                 stats["llm_candidate_count" if llm_on_incompatible else "rejected_count"] += 1
                 skip_counter["unsupported_adapter"] += 1
                 continue
 
             try:
-                for raw_file, raw_index, record in iter_source_records(source_dir, files):
-                    sample, skip_reason, invalid_paragraph_count = build_sample(
-                        record=record,
-                        source=source,
-                        current_source_id=current_source_id,
-                        raw_file=raw_file,
-                        source_dir=source_dir,
-                        raw_index=raw_index,
-                        min_text_length=min_text_length,
-                        normalize_whitespace=normalize_whitespace,
-                    )
-                    stats["invalid_paragraph_count"] += invalid_paragraph_count
+                for file_index, raw_file in enumerate(files, start=1):
+                    print(f"[build-jsonl] 数据源 {current_source_id}：处理文件 {file_index}/{len(files)} {raw_file.name}", flush=True)
+                    records = load_json_array(raw_file)
+                    for raw_index, record in enumerate(records):
+                        sample, skip_reason, invalid_paragraph_count = build_sample(
+                            record=record,
+                            source=source,
+                            current_source_id=current_source_id,
+                            raw_file=raw_file,
+                            source_dir=source_dir,
+                            raw_index=raw_index,
+                            min_text_length=min_text_length,
+                            normalize_whitespace=normalize_whitespace,
+                        )
+                        stats["invalid_paragraph_count"] += invalid_paragraph_count
 
-                    if sample is None:
-                        issue = make_issue_record(source, current_source_id, source_dir, raw_file, raw_index, skip_reason, record, max_preview_chars, keep_raw_record)
-                        target_file = llm_candidate_file if llm_on_incompatible else rejected_file
-                        write_jsonl_record(target_file, issue)
-                        stats["llm_candidate_count" if llm_on_incompatible else "rejected_count"] += 1
-                        skip_counter[skip_reason] += 1
-                        continue
+                        if sample is None:
+                            issue = make_issue_record(source, current_source_id, source_dir, raw_file, raw_index, skip_reason, record, max_preview_chars, keep_raw_record)
+                            target_file = llm_candidate_file if llm_on_incompatible else rejected_file
+                            write_jsonl_record(target_file, issue)
+                            stats["llm_candidate_count" if llm_on_incompatible else "rejected_count"] += 1
+                            skip_counter[skip_reason] += 1
+                            continue
 
-                    write_jsonl_record(output_file, sample)
-                    source_counter[sample["source_name"]] += 1
-                    tags = sample.get("tags", {})
-                    genre_counter[str(tags.get("genre", ""))] += 1
-                    dynasty_counter[str(tags.get("dynasty", ""))] += 1
-                    stats["written_count"] += 1
+                        write_jsonl_record(output_file, sample)
+                        source_counter[sample["source_name"]] += 1
+                        tags = sample.get("tags", {})
+                        genre_counter[str(tags.get("genre", ""))] += 1
+                        dynasty_counter[str(tags.get("dynasty", ""))] += 1
+                        stats["written_count"] += 1
+                        if stats["written_count"] % 10000 == 0:
+                            print(f"[build-jsonl] 已写入样本数：{stats['written_count']}", flush=True)
+                print(f"[build-jsonl] 数据源 {current_source_id} 处理完成，累计写入={stats['written_count']}，拒绝={stats['rejected_count']}", flush=True)
+
             except (OSError, json.JSONDecodeError, ValueError) as exc:
                 error_record = {
                     "source_id": current_source_id,

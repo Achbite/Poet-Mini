@@ -12,7 +12,11 @@ RUN pip install --no-cache-dir pyyaml
 
 COPY . /workspace/train
 
-RUN chmod +x /workspace/train/docker/data/entrypoint.sh
+RUN chmod +x /workspace/train/docker/data/entrypoint.sh \
+    /workspace/train/build_data.sh \
+    /workspace/train/build.sh \
+    /workspace/train/run.sh
+
 
 ENTRYPOINT ["/workspace/train/docker/data/entrypoint.sh"]
 CMD ["--config", "configs/data.yaml"]

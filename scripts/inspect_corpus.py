@@ -150,6 +150,8 @@ def count_missing_nested_fields(record: dict[str, Any], field_name: str, require
 
 def inspect_jsonl(input_path: Path) -> dict[str, Any]:
     """统计统一 JSONL 的样本质量和字段分布。"""
+    print(f"[inspect] 统计 JSONL：{input_path.as_posix()}", flush=True)
+
     source_id_counter: Counter[str] = Counter()
     source_name_counter: Counter[str] = Counter()
     genre_counter: Counter[str] = Counter()
@@ -181,7 +183,10 @@ def inspect_jsonl(input_path: Path) -> dict[str, Any]:
             continue
 
         total_samples += 1
+        if total_samples % 10000 == 0:
+            print(f"[inspect] 已统计样本数：{total_samples}", flush=True)
         for field_name in REQUIRED_FIELDS:
+
             if field_name not in record:
                 field_missing_counter[field_name] += 1
 
@@ -247,6 +252,8 @@ def inspect_jsonl(input_path: Path) -> dict[str, Any]:
 
 def inspect_text_file(text_path: Path) -> dict[str, Any]:
     """统计纯文本语料的基础规模。"""
+    print(f"[inspect] 统计纯文本语料：{text_path.as_posix()}", flush=True)
+
     if not text_path.exists():
         return {
             "input": text_path.as_posix(),

@@ -1,0 +1,69 @@
+#!/usr/bin/env bash
+set -eu
+
+PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CONTAINER_NAME="${POET_MINI_CONTAINER_NAME:-poet-mini-dev}"
+IMAGE_NAME="${POET_MINI_IMAGE_NAME:-poet-mini-dev:latest}"
+DOCKERFILE="${POET_MINI_DOCKERFILE:-docker/data/Dockerfile}"
+WORKDIR="/workspace/train"
+MODE="${1:-}"
+
+build_image() {
+    docker build -f "${PROJECT_ROOT}/${DOCKERFILE}" -t "${IMAGE_NAME}" "${PROJECT_ROOT}"
+}
+
+container_exists() {
+    docker ps -a --format '{{.Names}}' | grep -Fxq "${CONTAINER_NAME}"
+}
+
+container_running() {
+    docker ps --format '{{.Names}}' | grep -Fxq "${CONTAINER_NAME}"
+}
+
+create_container() {
+    build_image
+    docker run -dit \
+        --name "${CONTAINER_NAME}" \
+        --entrypoint /bin/sh \
+        -w "${WORKDIR}" \
+        -e LANG=C.UTF-8 \
+        -e LC_ALL=C.UTF-8 \
+        -e PYTHONIOENCODING=UTF-8 \
+        -v "${PROJECT_ROOT}:${WORKDIR}" \
+        "${IMAGE_NAME}" \
+        -lc "chmod +x ${WORKDIR}/build_data.sh ${WORKDIR}/build.sh ${WORKDIR}/run.sh 2>/dev/null || true; while :; do sleep 3600; done"
+}
+
+enter_container() {
+    docker exec -it "${CONTAINER_NAME}" /bin/sh
+}
+
+case "${MODE}" in
+    -restart)
+        if container_exists; then
+            docker restart "${CONTAINER_NAME}" >/dev/null
+        else
+            create_container
+        fi
+        enter_container
+        ;;
+    -clean)
+        if container_exists; then
+            docker rm -f "${CONTAINER_NAME}" >/dev/null
+        fi
+        create_container
+        enter_container
+        ;;
+    "")
+        if ! container_exists; then
+            create_container
+        elif ! container_running; then
+            docker start "${CONTAINER_NAME}" >/dev/null
+        fi
+        enter_container
+        ;;
+    *)
+        echo "用法：bash makeshell [-restart|-clean]" >&2
+        exit 2
+        ;;
+esac
