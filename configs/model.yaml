@@ -1,0 +1,13 @@
+# 任务类型：当前配置用于最小 GPT 模型结构
+task: model_config
+
+# 模型结构：第一版优先保证训练闭环可运行
+model:
+  vocab_size: 13212              # 词表大小，需与 tokenizer.json 一致
+  block_size: 256                # 上下文窗口 token 数，第一版先用较小窗口验证链路
+  n_layer: 6                     # Transformer block 层数
+  n_head: 6                      # 注意力头数，需整除 n_embd
+  n_embd: 384                    # embedding 维度
+  dropout: 0.1                   # dropout 概率，训练时启用
+  bias: false                    # Linear / LayerNorm 是否使用 bias
+  position_embedding: learned    # 位置编码类型，第一版使用 learned absolute position embedding

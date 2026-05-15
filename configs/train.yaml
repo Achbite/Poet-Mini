@@ -1,0 +1,38 @@
+# 任务类型：当前配置用于最小 GPT 训练闭环
+task: train_config
+
+# 输入文件：由阶段三 token 序列化产物提供
+data:
+  tokenizer_json: data/processed/tokenizer.json # tokenizer 文件路径
+  train_bin: data/processed/train.bin           # 训练 token 数据
+  val_bin: data/processed/val.bin               # 验证 token 数据
+  dtype: uint16                                 # token 数据 dtype，来自 tokenizer_stats.json
+
+# 训练参数：第一版只验证链路，不追求最终质量
+train:
+  device: auto                    # auto / cpu / cuda
+  batch_size: 32                  # 每 step batch 数量
+  max_steps: 1000                 # 最大训练步数
+  learning_rate: 0.0003           # AdamW 学习率
+  weight_decay: 0.1               # AdamW 权重衰减
+  beta1: 0.9                      # AdamW beta1
+  beta2: 0.95                     # AdamW beta2
+  grad_clip: 1.0                  # 梯度裁剪阈值
+  seed: 20260513                  # 随机种子
+  compile: false                  # 是否启用 torch.compile；第一版默认关闭，提升兼容性
+
+# 评估与保存：使用轻量频率方便本地观察
+runtime:
+  eval_interval: 100              # 每多少 step 评估一次
+  eval_iters: 20                  # 每次评估 batch 数
+  log_interval: 10                # 每多少 step 写一次日志
+  save_interval: 500              # 每多少 step 保存 checkpoint
+  sample_interval: 200            # 每多少 step 生成样例
+  sample_max_new_tokens: 120      # 每次采样最多生成 token 数
+  sample_prompt: "<BOS>标题：春夜\n作者：李白\n" # 默认采样 prompt
+
+# 输出路径：训练产物默认不纳入 Git
+output:
+  checkpoint_dir: outputs/checkpoints # checkpoint 输出目录
+  sample_dir: outputs/samples         # 样例输出目录
+  log_dir: outputs/logs               # metrics.jsonl 输出目录
