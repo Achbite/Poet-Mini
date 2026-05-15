@@ -7,6 +7,17 @@ IMAGE_NAME="${POET_MINI_IMAGE_NAME:-poet-mini-dev:latest}"
 DOCKERFILE="${POET_MINI_DOCKERFILE:-docker/data/Dockerfile}"
 WORKDIR="/workspace/train"
 MODE="${1:-}"
+EXTRA_MODE="${2:-}"
+GPU_MODE="${POET_MINI_DOCKER_GPU:-0}"
+
+if [ "${MODE}" = "-gpu" ]; then
+    MODE=""
+    GPU_MODE="1"
+fi
+
+if [ "${EXTRA_MODE}" = "-gpu" ]; then
+    GPU_MODE="1"
+fi
 
 build_image() {
     docker build -f "${PROJECT_ROOT}/${DOCKERFILE}" -t "${IMAGE_NAME}" "${PROJECT_ROOT}"
@@ -22,6 +33,12 @@ container_running() {
 
 create_container() {
     build_image
+    gpu_args=()
+    if [ "${GPU_MODE}" = "1" ] || [ "${GPU_MODE}" = "all" ]; then
+        gpu_args=(--gpus all)
+        echo "[makeshell] 已启用 Docker GPU 透传：--gpus all"
+    fi
+
     docker run -dit \
         --name "${CONTAINER_NAME}" \
         --entrypoint /bin/sh \
@@ -30,6 +47,7 @@ create_container() {
         -e LC_ALL=C.UTF-8 \
         -e PYTHONIOENCODING=UTF-8 \
         -v "${PROJECT_ROOT}:${WORKDIR}" \
+        "${gpu_args[@]}" \
         "${IMAGE_NAME}" \
         -lc "chmod +x ${WORKDIR}/build_data.sh ${WORKDIR}/build.sh ${WORKDIR}/run.sh 2>/dev/null || true; while :; do sleep 3600; done"
 }
@@ -63,7 +81,8 @@ case "${MODE}" in
         enter_container
         ;;
     *)
-        echo "用法：bash makeshell [-restart|-clean]" >&2
+        echo "用法：bash makeshell [-restart|-clean] [-gpu]" >&2
+        echo "示例：bash makeshell -clean -gpu" >&2
         exit 2
         ;;
 esac
