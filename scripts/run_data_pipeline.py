@@ -20,6 +20,12 @@ PIPELINE_STEPS = [
     "inspect",
 ]
 
+TOKENIZER_STEPS = [
+    "train-tokenizer",
+    "prepare-tokenized",
+]
+
+
 OPTIONAL_LLM_STEPS = [
     "normalize-llm",
     "merge-normalized",
@@ -95,32 +101,34 @@ def run_command(command: list[str], step_name: str) -> dict[str, object]:
 
 
 # ---- 步骤命令构建 ----
-def build_step_command(step_name: str, config_path: str) -> list[str]:
-
+def build_step_command(step_name: str, data_config_path: str, tokenizer_config_path: str) -> list[str]:
     """根据步骤名构建对应脚本命令。"""
     script_map = {
-        "scan": "scan_corpus.py",
-        "build-jsonl": "build_poems_jsonl.py",
-        "build-text": "build_corpus_text.py",
-        "inspect": "inspect_corpus.py",
-        "normalize-llm": "normalize_records_with_llm.py",
+        "scan": ("scan_corpus.py", data_config_path),
+        "build-jsonl": ("build_poems_jsonl.py", data_config_path),
+        "build-text": ("build_corpus_text.py", data_config_path),
+        "inspect": ("inspect_corpus.py", data_config_path),
+        "normalize-llm": ("normalize_records_with_llm.py", data_config_path),
+        "train-tokenizer": ("train_tokenizer.py", tokenizer_config_path),
+        "prepare-tokenized": ("prepare_tokenized_data.py", tokenizer_config_path),
     }
     if step_name not in script_map:
         raise ValueError(f"未知流水线步骤：{step_name}")
 
-    return [sys.executable, "-u", str(script_path(script_map[step_name])), "--config", config_path]
+    script_name, config_path = script_map[step_name]
+    return [sys.executable, "-u", str(script_path(script_name)), "--config", config_path]
 
 
 # ---- LLM 分类命令构建 ----
 def build_llm_style_command(config_path: str) -> list[str]:
-
     """构建可选 LLM 风格分类命令。"""
+
     return [sys.executable, "-u", str(script_path("classify_styles_with_llm.py")), "--config", config_path]
 
 
 # ---- LLM 规范化结果合并 ----
-
 def iter_jsonl(path: Path) -> list[str]:
+
     """读取 JSONL 原始行，忽略空行。"""
     if not path.exists():
         return []
@@ -172,14 +180,19 @@ def parse_args() -> argparse.Namespace:
     """解析命令行参数。"""
     parser = argparse.ArgumentParser(description="Docker 数据清洗与语料构建统一入口")
     parser.add_argument("--config", default="configs/data.yaml", help="数据配置文件路径，默认相对 train 根目录")
+    parser.add_argument("--tokenizer-config", default="configs/tokenizer.yaml", help="tokenizer 配置文件路径，默认相对 train 根目录")
+
     parser.add_argument(
         "--steps",
         default=",".join(PIPELINE_STEPS),
-        help="要执行的步骤，使用逗号分隔，可选 scan,build-jsonl,normalize-llm,merge-normalized,build-text,inspect",
+        help="要执行的步骤，使用逗号分隔，可选 scan,build-jsonl,normalize-llm,merge-normalized,build-text,inspect,train-tokenizer,prepare-tokenized",
     )
+
     parser.add_argument("--with-llm-normalization", action="store_true", help="在基础清洗后执行可选 LLM 格式规范化并合并结果")
     parser.add_argument("--with-llm-style", action="store_true", help="在基础清洗后执行可选 LLM 风格分类")
+    parser.add_argument("--with-tokenizer", action="store_true", help="在基础清洗后执行 tokenizer 构建和 token 序列化")
     parser.add_argument("--continue-on-error", action="store_true", help="某一步失败后继续执行后续步骤")
+
     return parser.parse_args()
 
 
@@ -190,15 +203,18 @@ def main() -> int:
     requested_steps = [item.strip() for item in args.steps.split(",") if item.strip()]
     if args.with_llm_normalization:
         requested_steps = ["scan", "build-jsonl", *OPTIONAL_LLM_STEPS, "build-text", "inspect"]
+    if args.with_tokenizer:
+        requested_steps = [*requested_steps, *TOKENIZER_STEPS]
 
     print(f"[pipeline] 数据流水线启动，步骤：{','.join(requested_steps)}", flush=True)
+
     results: list[dict[str, object]] = []
     exit_code = 0
     llm_normalization_skipped = False
 
     for step_name in requested_steps:
-
         if step_name == "merge-normalized" and llm_normalization_skipped:
+
             result = {
                 "step": "merge-normalized",
                 "returncode": 0,
@@ -208,8 +224,9 @@ def main() -> int:
         elif step_name == "merge-normalized":
             result = merge_normalized_records(args.config)
         else:
-            command = build_step_command(step_name, args.config)
+            command = build_step_command(step_name, args.config, args.tokenizer_config)
             result = run_command(command, step_name)
+
         results.append(result)
 
         if step_name == "normalize-llm" and result["returncode"] == 0:

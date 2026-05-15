@@ -1,0 +1,38 @@
+# 任务类型：当前配置用于字级 tokenizer 构建和 token 序列化
+task: tokenizer_pipeline
+
+# tokenizer 类型：第一版采用字级 tokenizer，保留古诗词单字节奏和繁体 / 异体字
+tokenizer:
+  type: char                         # tokenizer 类型，当前固定为 char
+  min_frequency: 1                   # 字符最低保留频次；古诗词罕见字较多，第一版保留全部字符
+  add_bos: true                      # 编码每个样本时是否添加 <BOS>
+  add_eos: true                      # 编码每个样本时是否添加 <EOS>
+  special_tokens:                    # 固定特殊 token 顺序，ID 按顺序分配
+    - <PAD>
+    - <BOS>
+    - <EOS>
+    - <UNK>
+    - <SEP>
+
+# 输入文件：默认使用清洗后的中间产物
+input:
+  corpus_text: data/interim/poetry_corpus.txt # tokenizer 词表统计输入
+  poems_jsonl: data/interim/poems.jsonl       # token 序列化输入，按样本添加 BOS/EOS
+
+# 输出文件：tokenizer 和 tokenized 数据默认写入 processed
+output:
+  tokenizer_json: data/processed/tokenizer.json # tokenizer 词表与元信息
+  train_bin: data/processed/train.bin           # 训练 token 数据
+  val_bin: data/processed/val.bin               # 验证 token 数据
+  stats_json: outputs/logs/tokenizer_stats.json # tokenizer 与 token 序列化统计
+
+# 数据切分：第一版按样本级稳定随机切分
+split:
+  val_ratio: 0.02                  # 验证集比例，取值范围 [0, 1)
+  seed: 20260513                   # 稳定随机种子，保证可复现
+  shuffle_samples: true            # 是否按样本打乱后切分
+
+# 检查输出：用于人工抽样确认 token 编解码是否正常
+check:
+  sample_decode_count: 5           # 写入统计报告的解码样例数量
+  progress_interval: 10000         # 序列化阶段每处理多少个样本输出一次进度
